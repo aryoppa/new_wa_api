@@ -1,7 +1,6 @@
 const {
     default: makeWASocket,
     DisconnectReason,
-    fetchLatestBaileysVersion,
     isJidBroadcast,
     makeInMemoryStore,
     useMultiFileAuthState,
@@ -12,7 +11,6 @@ const fs = require('fs');
 const pino = require("pino");
 const { session } = { "session": "baileys_auth_info" };
 const { makeApiRequest } = require('../utils/utils');
-const { writeFile } = require("fs/promises");
 
 const store = makeInMemoryStore({ logger: pino().child({ level: "silent", stream: "store" }) });
 let sock;
@@ -28,51 +26,66 @@ async function connectToWhatsApp() {
     store.bind(sock.ev);
     sock.multi = true;
     sock.ev.on('connection.update', async (update) => {
+        // Connection update logic...
         const { connection, lastDisconnect } = update;
-        if (connection === 'close') {
-            const reason = lastDisconnect?.error ? new Boom(lastDisconnect.error).output.statusCode : -1;
-            const reconnect = async () => {
-                console.log("Reconnecting...");
-                await connectToWhatsApp();
-            };
-
-            switch (reason) {
-                case DisconnectReason.badSession:
-                    console.log(`Bad Session File, Please Delete ${session} and Scan Again`);
-                    await sock.logout();
-                    break;
-                case DisconnectReason.connectionClosed:
-                case DisconnectReason.connectionLost:
-                case DisconnectReason.restartRequired:
-                case DisconnectReason.timedOut:
-                    await reconnect();
-                    break;
-                case DisconnectReason.loggedOut:
-                    console.log(`Device Logged Out, deleting session and scanning again.`);
-                    await fs.promises.rm('baileys_auth_info', { recursive: true });
-                    await reconnect();
-                    await sock.logout();
-                    break;
-                default:
-                    console.error(`Unknown DisconnectReason: ${reason}|${lastDisconnect?.error}`);
-                    sock.end();
-                    break;
-            }
-        } else if (connection === 'open') {
-            console.log('Bot is ready!');
-            const getGroups = await sock.groupFetchAllParticipating();
-            return Object.values(getGroups);
+		if(connection === 'close') {
+            let reason = lastDisconnect && lastDisconnect.error ? new Boom(lastDisconnect.error).output.statusCode : -1;
+			switch (reason) {
+				case DisconnectReason.badSession:
+					console.log(`Bad Session File, Please Delete ${session} and Scan Again`);
+					sock.logout();
+					break;
+				case DisconnectReason.connectionClosed:
+					console.log("Connection closed, reconnecting....");
+					connectToWhatsApp();
+					break;
+				case DisconnectReason.connectionLost:
+					console.log("Connection Lost from Server, reconnecting...");
+					connectToWhatsApp();
+					break;
+				case DisconnectReason.loggedOut:
+					console.log(`Device Logged Out, deleting session and scanning again.`);
+					fs.rm('baileys_auth_info', { recursive: true });
+					connectToWhatsApp();
+					sock.logout();
+					break;
+				case DisconnectReason.restartRequired:
+					console.log("Restart Required, Restarting...");
+					connectToWhatsApp();
+					break;
+				case DisconnectReason.timedOut:
+					console.log("Connection TimedOut, Reconnecting...");
+					connectToWhatsApp();
+					break;
+				default:
+					sock.end(`Unknown DisconnectReason: ${reason}|${lastDisconnect.error}`);
+					break;
+			}
+        }else if(connection === 'open') {
+			console.log('Bot is ready!');
+			let getGroups = await sock.groupFetchAllParticipating();
+			let groups = Object.entries(getGroups).slice(0).map(entry => entry[1]);
+			return groups;
         }
     });
     sock.ev.on("creds.update", saveCreds);
+    // 
     sock.ev.on("messages.upsert", async ({ messages }) => {
         const message = messages[0];
+        // console.log(message);
         const { key, message: msgContent } = message;
         const { remoteJid: noWa, fromMe } = key;
+        // console.log(key);
         const check = msgContent?.extendedTextMessage?.contextInfo;
         const targetJid = "6285880379892@s.whatsapp.net";
-        const textMessage = msgContent?.conversation || msgContent?.extendedTextMessage?.text;
+        // const targetJid = "6285880379892@s.whatsapp.net";
+        const text = msgContent?.conversation || msgContent?.extendedTextMessage?.text;
+        // console.log(msgContent);
+        // if(msgContent.conversation)
+        
+        textMessage = text.replaceAll(/\p{Emoji}/gu, ''); // '--'
 
+        // console.log(textMessage);
         // Mark the message as read
         await sock.readMessages([key]);
 
@@ -98,7 +111,7 @@ async function connectToWhatsApp() {
             if (textMessage) {
                 await sendReply(textMessage);
             } else {
-                const messageType = Object.keys(msgContent)[0];
+                const messageType = Object?.keys(msgContent)[0];
                 if (messageType === 'documentMessage') {
                     try {
                         const buffer = await downloadMediaMessage(
@@ -126,4 +139,3 @@ async function connectToWhatsApp() {
 module.exports = {
     connectToWhatsApp,
 }
-
