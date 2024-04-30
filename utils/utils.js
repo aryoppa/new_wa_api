@@ -1,4 +1,3 @@
-// const qrcode = require("qrcode");
 const axios = require("axios");
 const { apiUrl } = require('../config');
 
@@ -25,36 +24,9 @@ async function makeApiRequest(text) {
                 }
                 console.error('Full error:', error);
             }
-            // console.log(response.data.message);
             return response;
 }
 
-// function updateQR(data, soket) {
-//     switch (data) {
-//         case "qr":
-//             qrcode.toDataURL(qr, (err, url) => {
-//                 soket?.emit("qr", url);
-//                 soket?.emit("log", "QR Code received, please scan!");
-//             });
-//             break;
-//         case "connected":
-//             soket?.emit("qrstatus", "./assets/check.svg");
-//             soket?.emit("log", "WhatsApp terhubung!");
-//             break;
-//         case "qrscanned":
-//             soket?.emit("qrstatus", "./assets/check.svg");
-//             soket?.emit("log", "QR Code Telah discan!");
-//             break;
-//         case "loading":
-//             soket?.emit("qrstatus", "./assets/loader.gif");
-//             soket?.emit("log", "Registering QR Code , please wait!");
-//             break;
-//         default:
-//             break;
-//     }
-// }
-
 module.exports = {
-    makeApiRequest,
-    // updateQR
+    makeApiRequest
 };
