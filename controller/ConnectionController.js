@@ -11,6 +11,7 @@ const fs = require('fs');
 const pino = require("pino");
 const { session } = { "session": "baileys_auth_info" };
 const { makeApiRequest } = require('../utils/utils');
+const {writetoFile} = require('../logger')
 
 const store = makeInMemoryStore({ logger: pino().child({ level: "silent", stream: "store" }) });
 let sock;
@@ -80,15 +81,21 @@ async function handleMessagesUpsert({ messages }) {
     const textMessage = text?.replaceAll(/\p{Emoji}/gu, '');
 
     await sock.readMessages([key]);
-    console.log(message);
+    // console.log(message);
     const isGroupMessage = key.remoteJid.includes("@g.us");
     const isPersonalMessage = !fromMe;
     const isTargetMentioned = check?.mentionedJid?.includes(targetJid) || check?.participant?.includes(targetJid);
 
     if (isGroupMessage && isTargetMentioned) {
-        await sendReply(noWa, textMessage, message);
+        const answer = await sendReply(noWa, textMessage, message);
+        // console.log("tes");
+        // await writetoFile(message.pushName, textMessage, answer);
+
     } else if (isPersonalMessage) {
-        await handleNonTargetMessage(noWa, msgContent, message, textMessage);
+        // await handleNonTargetMessage(noWa, msgContent, message, textMessage);
+        const answer = await sendReply(noWa, textMessage, message);
+        // console.log(answer);
+        await writetoFile(message.pushName, key.remoteJid ,textMessage, answer);
     }
 }
 
@@ -97,7 +104,7 @@ async function sendReply(noWa, textMessage, message) {
         try {
             const response = await makeApiRequest(textMessage);
             await sock.sendMessage(noWa, { text: response.data }, { quoted: message });
-            
+            return response.data;
         } catch (error) {
             console.error("Error sending message:", error);
         }
