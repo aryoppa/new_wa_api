@@ -83,7 +83,7 @@ async function handleMessagesUpsert({ messages }) {
     await sock.readMessages([key]);
     
     const isGroupMessage = key.remoteJid.includes("@g.us");
-    const isPersonalMessage = !fromMe;
+    const isPersonalMessage = !fromMe && !isGroupMessage;
     const isTargetMentioned = check?.mentionedJid?.includes(targetJid) || check?.participant?.includes(targetJid);
 
     if (isGroupMessage && isTargetMentioned) {
