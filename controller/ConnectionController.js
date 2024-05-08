@@ -89,7 +89,7 @@ async function handleMessagesUpsert({ messages }) {
     if (isGroupMessage && isTargetMentioned) {
         const answer = await sendReply(noWa, textMessage, message);
         // console.log("tes");
-        // await writetoFile(message.pushName, textMessage, answer);
+        await writetoFile(message.pushName, textMessage, answer);
 
     } else if (isPersonalMessage) {
         // await handleNonTargetMessage(noWa, msgContent, message, textMessage);
