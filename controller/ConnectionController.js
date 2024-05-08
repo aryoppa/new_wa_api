@@ -78,10 +78,10 @@ async function handleMessagesUpsert({ messages }) {
     const check = msgContent?.extendedTextMessage?.contextInfo;
     const targetJid = "6285880379892@s.whatsapp.net";
     const text = msgContent?.conversation || msgContent?.extendedTextMessage?.text;
-    const textMessage = text?.replaceAll(/\p{Emoji}/gu, '');
-
+    // const textMessage = text?.replaceAll(/\p{Emoji}/gu, '');
+    const textMessage = text;
     await sock.readMessages([key]);
-    // console.log(message);
+    
     const isGroupMessage = key.remoteJid.includes("@g.us");
     const isPersonalMessage = !fromMe;
     const isTargetMentioned = check?.mentionedJid?.includes(targetJid) || check?.participant?.includes(targetJid);

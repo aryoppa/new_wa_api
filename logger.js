@@ -12,8 +12,7 @@ async function writetoFile(name, nowa, question, response){
         mode: 0o666
     };
 
-
-    appendFileSync(`${logDir}/${number}.log`, JSON.stringify(data) + "\n", options);
+    appendFileSync(`${logDir}/logs.csv`, JSON.stringify(data) + "\n", options);
 };
 
 
