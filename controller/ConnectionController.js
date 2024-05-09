@@ -13,9 +13,15 @@ const { session } = { "session": "baileys_auth_info" };
 const { makeApiRequest } = require('../utils/utils');
 const {writetoFile} = require('../logger')
 
+// Create an in-memory store with silent logging.
 const store = makeInMemoryStore({ logger: pino().child({ level: "silent", stream: "store" }) });
 let sock;
 
+/**
+ * Establishes a connection to WhatsApp using Baileys library.
+ * It initializes the socket with authentication state, binds event listeners,
+ * and handles QR code printing in the terminal.
+ */
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState(session);
     sock = makeWASocket({
@@ -31,6 +37,11 @@ async function connectToWhatsApp() {
     sock.ev.on("messages.upsert", handleMessagesUpsert);
 }
 
+/**
+ * Handles updates to the connection state.
+ * Logs the bot readiness or handles disconnection based on the connection status.
+ * @param {Object} update - The connection update object.
+ */
 async function handleConnectionUpdate(update) {
     const { connection, lastDisconnect } = update;
     if (connection === 'close') {
@@ -42,6 +53,10 @@ async function handleConnectionUpdate(update) {
     }
 }
 
+/**
+ * Handles disconnection events by logging out or attempting reconnection based on the reason.
+ * @param {string} reason - The reason for the disconnection.
+ */
 async function handleDisconnect(reason) {
     switch (reason) {
         case DisconnectReason.badSession:
@@ -66,11 +81,19 @@ async function handleDisconnect(reason) {
     }
 }
 
+/**
+ * Fetches all groups where the bot is participating.
+ * @returns {Array} An array of group objects.
+ */
 async function fetchGroups() {
     const getGroups = await sock.groupFetchAllParticipating();
     return Object.values(getGroups);
 }
 
+/**
+ * Handles new messages and decides the course of action based on the message type and content.
+ * @param {Object} upsert - The messages upsert object containing new or updated messages.
+ */
 async function handleMessagesUpsert({ messages }) {
     const message = messages[0];
     const { key, message: msgContent } = message;
@@ -88,17 +111,22 @@ async function handleMessagesUpsert({ messages }) {
 
     if (isGroupMessage && isTargetMentioned) {
         const answer = await sendReply(noWa, textMessage, message);
-        // console.log("tes");
         await writetoFile(message.pushName, textMessage, answer);
 
     } else if (isPersonalMessage) {
         // await handleNonTargetMessage(noWa, msgContent, message, textMessage);
         const answer = await sendReply(noWa, textMessage, message);
-        // console.log(answer);
         await writetoFile(message.pushName, key.remoteJid ,textMessage, answer);
     }
 }
 
+/**
+ * Sends a reply to a specific WhatsApp number.
+ * @param {string} noWa - The WhatsApp number to send the message to.
+ * @param {string} textMessage - The text message to send.
+ * @param {Object} message - The original message object for quoting.
+ * @returns {string} The response data from the API.
+ */
 async function sendReply(noWa, textMessage, message) {
     if (textMessage) {
         try {
@@ -114,18 +142,11 @@ async function sendReply(noWa, textMessage, message) {
     }
 }
 
-async function handleNonTargetMessage(noWa, msgContent, message, textMessage) {
-    
-    if (textMessage) {
-        await sendReply(noWa, textMessage, message);
-    } else {
-        const messageType = Object.keys(msgContent)[0];
-        if (messageType === 'documentMessage') {
-            await handleDocumentMessage(message, msgContent);
-        }
-    }
-}
-
+/**
+ * Handles document messages by downloading and saving the document.
+ * @param {Object} message - The message object containing the document.
+ * @param {Object} msgContent - The content of the document message.
+ */
 async function handleDocumentMessage(message, msgContent) {
     try {
         const buffer = await downloadMediaMessage(

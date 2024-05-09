@@ -1,20 +1,35 @@
-const { existsSync, mkdirSync, appendFile, appendFileSync } = require("fs");
-const readline = require("readline");
+const fs = require("fs");
 
-
-async function writetoFile(name, nowa, question, response){
+/**
+ * Writes log data to a CSV file.
+ * 
+ * @param {string} name - The name of the client.
+ * @param {string} nowa - The WhatsApp number including the domain.
+ * @param {string} question - The question asked by the client.
+ * @param {string} response - The response given to the client.
+ */
+function writetoFile(name, nowa, question, response) {
     const logDir = "./logs";
-    const number = nowa?.replaceAll('@s.whatsapp.net', '');
-    const data ={"client": name, "phone number": number, "question": question, "answer": response};
-
-    const options = {
-        encoding: 'utf8',
-        mode: 0o666
+    const logFile = `${logDir}/logs.csv`;
+    const number = nowa?.replace('@s.whatsapp.net', ''); // Remove WhatsApp domain from number
+    const data = {
+        "client": name,
+        "phone number": number,
+        "question": question,
+        "answer": response
     };
 
-    appendFileSync(`${logDir}/logs.csv`, JSON.stringify(data) + "\n", options);
-};
+    // Ensure the logs directory exists
+    if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir);
+    }
 
+    // Append the log data to the CSV file
+    fs.appendFileSync(logFile, JSON.stringify(data) + "\n", {
+        encoding: 'utf8',
+        mode: 0o666
+    });
+}
 
 module.exports = {
     writetoFile
