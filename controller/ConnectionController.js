@@ -7,11 +7,11 @@ const {
     downloadMediaMessage,
 } = require("@whiskeysockets/baileys");
 const { Boom } = require("@hapi/boom");
-const fs = require('fs');
+const fs = require('fs').promises;
 const pino = require("pino");
-const { session } = { "session": "baileys_auth_info" };
+const session = "baileys_auth_info";
 const { makeApiRequest } = require('../utils/utils');
-const {writetoFile} = require('../logger')
+const { writeToDatabase } = require('../logger');
 
 // Create an in-memory store with silent logging.
 const store = makeInMemoryStore({ logger: pino().child({ level: "silent", stream: "store" }) });
@@ -31,17 +31,11 @@ async function connectToWhatsApp() {
         shouldIgnoreJid: isJidBroadcast
     });
     store.bind(sock.ev);
-    sock.multi = true;
     sock.ev.on('connection.update', handleConnectionUpdate);
     sock.ev.on("creds.update", saveCreds);
     sock.ev.on("messages.upsert", handleMessagesUpsert);
 }
 
-/**
- * Handles updates to the connection state.
- * Logs the bot readiness or handles disconnection based on the connection status.
- * @param {Object} update - The connection update object.
- */
 async function handleConnectionUpdate(update) {
     const { connection, lastDisconnect } = update;
     if (connection === 'close') {
@@ -49,7 +43,7 @@ async function handleConnectionUpdate(update) {
         await handleDisconnect(reason);
     } else if (connection === 'open') {
         console.log('Bot is ready!');
-        return await fetchGroups();
+        await fetchGroups();
     }
 }
 
@@ -58,27 +52,16 @@ async function handleConnectionUpdate(update) {
  * @param {string} reason - The reason for the disconnection.
  */
 async function handleDisconnect(reason) {
-    switch (reason) {
-        case DisconnectReason.badSession:
-            console.log(`Bad Session File, Please Delete ${session} and Scan Again`);
-            await sock.logout();
-            break;
-        case DisconnectReason.connectionClosed:
-        case DisconnectReason.connectionLost:
-        case DisconnectReason.restartRequired:
-        case DisconnectReason.timedOut:
-            console.log("Connection issue, reconnecting...");
-            connectToWhatsApp();
-            break;
-        case DisconnectReason.loggedOut:
-            console.log(`Device Logged Out, deleting session and scanning again.`);
-            await fs.rm(session, { recursive: true });
-            connectToWhatsApp();
-            break;
-        default:
-            sock.end(`Unknown DisconnectReason: ${reason}`);
-            break;
+    if (reason === DisconnectReason.loggedOut || reason === DisconnectReason.badSession) {
+        console.log(reason === DisconnectReason.loggedOut ? `Device Logged Out, deleting session and scanning again.` : `Bad Session File, Please Delete ${session} and Scan Again`);
+        await fs.rm(session, { recursive: true }).catch(console.error);
+    } else if (Object.values(DisconnectReason).includes(reason)) {
+        console.log("Connection issue, reconnecting...");
+    } else {
+        console.error(`Unknown DisconnectReason: ${reason}`);
+        return;
     }
+    connectToWhatsApp();
 }
 
 /**
@@ -90,19 +73,15 @@ async function fetchGroups() {
     return Object.values(getGroups);
 }
 
-/**
- * Handles new messages and decides the course of action based on the message type and content.
- * @param {Object} upsert - The messages upsert object containing new or updated messages.
- */
 async function handleMessagesUpsert({ messages }) {
     const message = messages[0];
     const { key, message: msgContent } = message;
     const { remoteJid: noWa, fromMe } = key;
     const check = msgContent?.extendedTextMessage?.contextInfo;
-    const targetJid = "6285880379892@s.whatsapp.net";
+    // const targetJid = "6285880379892@s.whatsapp.net";
+    const targetJid = "6285159911409@s.whatsapp.net";
     const text = msgContent?.conversation || msgContent?.extendedTextMessage?.text;
-    // const textMessage = text?.replaceAll(/\p{Emoji}/gu, '');
-    const textMessage = text;
+    const textMessage = text?.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{1F191}-\u{1F251}\u{1F004}\u{1F0CF}\u{1F170}-\u{1F171}\u{1F17E}-\u{1F17F}\u{1F18E}\u{3030}\u{2B50}\u{2B55}\u{2934}-\u{2935}\u{2B05}-\u{2B07}\u{2B1B}-\u{2B1C}\u{3297}\u{3299}\u{303D}\u{00A9}\u{00AE}\u{2122}\u{23F3}\u{24C2}\u{23E9}-\u{23EF}\u{25B6}\u{23F8}-\u{23FA}]/gu, '');
     await sock.readMessages([key]);
     
     const isGroupMessage = key.remoteJid.includes("@g.us");
@@ -110,13 +89,13 @@ async function handleMessagesUpsert({ messages }) {
     const isTargetMentioned = check?.mentionedJid?.includes(targetJid) || check?.participant?.includes(targetJid);
 
     if (isGroupMessage && isTargetMentioned) {
-        const answer = await sendReply(noWa, textMessage, message);
-        await writetoFile(message.pushName, textMessage, answer);
+        const cleanquery = textMessage.replace("@6285159911409", '');
+        const answer = await sendReply(noWa, cleanquery, message);
+        await writeToDatabase(message.pushName, key.participant, cleanquery, answer);
 
     } else if (isPersonalMessage) {
-        // await handleNonTargetMessage(noWa, msgContent, message, textMessage);
         const answer = await sendReply(noWa, textMessage, message);
-        await writetoFile(message.pushName, key.remoteJid ,textMessage, answer);
+        await writeToDatabase(message.pushName, key.remoteJid ,textMessage, answer);
     }
 }
 
@@ -168,4 +147,4 @@ async function handleDocumentMessage(message, msgContent) {
 
 module.exports = {
     connectToWhatsApp
-}
+};
