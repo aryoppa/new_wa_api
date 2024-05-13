@@ -11,7 +11,8 @@ const fs = require('fs').promises;
 const pino = require("pino");
 const session = "baileys_auth_info";
 const { makeApiRequest } = require('../utils/utils');
-const { writeToDatabase } = require('../logger');
+// const { writeToDatabase } = require('../logging_db/logger');
+const { writeToDatabase } = require('../logging_db/logger_sqlite');
 
 // Create an in-memory store with silent logging.
 const store = makeInMemoryStore({ logger: pino().child({ level: "silent", stream: "store" }) });
