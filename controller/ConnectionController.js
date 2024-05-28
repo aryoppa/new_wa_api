@@ -14,21 +14,20 @@ const { makeApiRequest } = require('../utils/utils');
 // const { writeToDatabase } = require('../logging_db/logger');
 const { writeToDatabase } = require('../logging_db/logger_sqlite');
 
-// Create an in-memory store with silent logging.
-const store = makeInMemoryStore({ logger: pino().child({ level: "silent", stream: "store" }) });
+// Configure silent logging for the in-memory store.
+const silentLogger = pino().child({ level: "silent", stream: "store" });
+const store = makeInMemoryStore({ logger: silentLogger });
 let sock;
 
 /**
- * Establishes a connection to WhatsApp using Baileys library.
- * It initializes the socket with authentication state, binds event listeners,
- * and handles QR code printing in the terminal.
+ * Initializes the WhatsApp connection and event listeners.
  */
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState(session);
     sock = makeWASocket({
         printQRInTerminal: true,
         auth: state,
-        logger: pino({ level: "silent" }),
+        logger: silentLogger,
         shouldIgnoreJid: isJidBroadcast
     });
     store.bind(sock.ev);
@@ -37,43 +36,54 @@ async function connectToWhatsApp() {
     sock.ev.on("messages.upsert", handleMessagesUpsert);
 }
 
+/**
+ * Processes connection updates and triggers appropriate actions.
+ * @param {Object} update - The connection update object.
+ */
 async function handleConnectionUpdate(update) {
     const { connection, lastDisconnect } = update;
     if (connection === 'close') {
-        const reason = lastDisconnect?.error ? new Boom(lastDisconnect.error).output.statusCode : DisconnectReason.unknown;
-        await handleDisconnect(reason);
+        const disconnectReason = lastDisconnect?.error ? new Boom(lastDisconnect.error).output.statusCode : DisconnectReason.unknown;
+        await handleDisconnect(disconnectReason);
     } else if (connection === 'open') {
-        console.log('Bot is ready!');
+        console.log('WhatsApp connection established.');
         await fetchGroups();
     }
 }
 
 /**
- * Handles disconnection events by logging out or attempting reconnection based on the reason.
- * @param {string} reason - The reason for the disconnection.
+ * Manages disconnection based on the provided reason.
+ * @param {string} reason - The disconnection reason.
  */
 async function handleDisconnect(reason) {
-    if (reason === DisconnectReason.loggedOut || reason === DisconnectReason.badSession) {
-        console.log(reason === DisconnectReason.loggedOut ? `Device Logged Out, deleting session and scanning again.` : `Bad Session File, Please Delete ${session} and Scan Again`);
+    const isLoggedOut = reason === DisconnectReason.loggedOut;
+    const isBadSession = reason === DisconnectReason.badSession;
+    if (isLoggedOut || isBadSession) {
+        const message = isLoggedOut ? `Device Logged Out, deleting session and scanning again.` : `Bad Session File, Please Delete ${session} and Scan Again`;
+        console.log(message);
         await fs.rm(session, { recursive: true }).catch(console.error);
     } else if (Object.values(DisconnectReason).includes(reason)) {
-        console.log("Connection issue, reconnecting...");
+        console.log("Connection issue detected, attempting to reconnect...");
     } else {
-        console.error(`Unknown DisconnectReason: ${reason}`);
+        console.error(`Unrecognized disconnection reason: ${reason}`);
         return;
     }
     connectToWhatsApp();
 }
 
 /**
- * Fetches all groups where the bot is participating.
- * @returns {Array} An array of group objects.
+ * Retrieves groups where the bot is a participant.
+ * @returns {Promise<Array>} A promise that resolves to an array of group objects.
  */
 async function fetchGroups() {
-    const getGroups = await sock.groupFetchAllParticipating();
-    return Object.values(getGroups);
+    const groups = await sock.groupFetchAllParticipating();
+    return Object.values(groups);
 }
 
+/**
+ * Handles new messages and performs actions based on message content.
+ * @param {Object} upsert - The messages upsert object.
+ */
 async function handleMessagesUpsert({ messages }) {
     const message = messages[0];
     const { key, message: msgContent } = message;
@@ -93,28 +103,32 @@ async function handleMessagesUpsert({ messages }) {
     if (isGroupMessage && isTargetMentioned) {
         const cleanQuery = textMessage.replace(`@${targetJid.split('@')[0]}`, '').trim();
         const answer = await sendReply(noWa, cleanQuery, message);
-        await writeToDatabase(message.pushName, key.participant, cleanQuery, answer);
+        console.log(answer)
+        await writeToDatabase(message.pushName, noWa, textMessage, messages, index);
     } else if (isPersonalMessage) {
         const answer = await sendReply(noWa, textMessage, message);
-        await writeToDatabase(message.pushName, noWa, textMessage, answer);
+        console.log(answer)
+        const messages = answer.data.data.message
+        const index = answer.data.data.index
+        await writeToDatabase(message.pushName, noWa, textMessage, messages, index);
     }
 }
 
 /**
- * Sends a reply to a specific WhatsApp number.
- * @param {string} noWa - The WhatsApp number to send the message to.
- * @param {string} textMessage - The text message to send.
- * @param {Object} message - The original message object for quoting.
- * @returns {string} The response data from the API.
+ * Sends a text reply to a WhatsApp number and quotes the original message.
+ * @param {string} noWa - The recipient's WhatsApp number.
+ * @param {string} textMessage - The message text to send.
+ * @param {Object} message - The original message for quoting.
+ * @returns {Promise<Object>} A promise that resolves to the API response.
  */
 async function sendReply(noWa, textMessage, message) {
     if (textMessage) {
         try {
             const response = await makeApiRequest(textMessage);
-            await sock.sendMessage(noWa, { text: response.data }, { quoted: message });
-            return response.data;
+            await sock.sendMessage(noWa, { text: response.data.data.message }, { quoted: message });
+            return response;
         } catch (error) {
-            console.error("Error sending message:", error);
+            console.error("Failed to send message:", error);
         }
     } else {
         const nonTextMessageReply = "Mohon maaf, untuk saat ini kami hanya dapat menerima pesan text. Silahkan kirim ulang pertanyaan Anda dalam bentuk text.";
@@ -123,26 +137,22 @@ async function sendReply(noWa, textMessage, message) {
 }
 
 /**
- * Handles document messages by downloading and saving the document.
+ * Downloads and saves a document from a WhatsApp message.
  * @param {Object} message - The message object containing the document.
  * @param {Object} msgContent - The content of the document message.
  */
 async function handleDocumentMessage(message, msgContent) {
     try {
-        const buffer = await downloadMediaMessage(
-            message,
-            'buffer',
-            {},
-            { reuploadRequest: sock.updateMediaMessage }
-        );
+        const buffer = await downloadMediaMessage(message, 'buffer', {}, { reuploadRequest: sock.updateMediaMessage });
         const name = msgContent?.documentMessage?.fileName;
         if (name) {
             await fs.writeFile(`./downloads/${name}`, buffer);
+            console.log(`Document saved: ${name}`);
         } else {
-            console.log('No file name provided, cannot save the file.');
+            console.log('Document name missing, unable to save file.');
         }
     } catch (error) {
-        console.error("Error handling document message:", error);
+        console.error("Document handling error:", error);
     }
 }
 
