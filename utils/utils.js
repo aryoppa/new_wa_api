@@ -1,5 +1,5 @@
 const axios = require("axios");
-const { apiUrl } = require('../config');
+const { apiUrl_rag, apiUrl_reckon } = require('../config');
 
 /**
  * Sends a POST request to the configured API with the provided text.
@@ -11,7 +11,21 @@ async function makeApiRequest(text) {
     try {
         const postData = { text };
         const headers = { 'Content-Type': 'application/json' };
-        return await axios.post(apiUrl, postData, { headers });
+        return await axios.post(apiUrl_rag, postData, { headers });
+    } catch (error) {
+        logApiError(error);
+        return null;
+    }
+}
+
+/**
+ * Sends a GET request to the configured API.
+ * 
+ * @returns {Promise<Object|null>} The response from the API or null in case of an error.
+ */
+async function getApiReckon(){
+    try {
+        return await axios.get(apiUrl_reckon);
     } catch (error) {
         logApiError(error);
         return null;
@@ -37,5 +51,6 @@ function logApiError(error) {
 }
 
 module.exports = {
-    makeApiRequest
+    makeApiRequest,
+    getApiReckon
 };
