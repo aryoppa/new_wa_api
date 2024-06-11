@@ -9,10 +9,11 @@ const {
     downloadMediaMessage,
 } = require("@whiskeysockets/baileys");
 const { Boom } = require("@hapi/boom");
-const fs = require('fs').promises;
+const fs = require('fs');
 const pino = require("pino");
 const { makeApiRequest, getApiReckon } = require('../utils/utils');
 const { writeToDatabase } = require('../logging_db/logger_sqlite');
+const { decode } = require("punycode");
 
 // Constants
 const SESSION = "baileys_auth_info";
@@ -69,7 +70,7 @@ async function handleDisconnect(reason) {
     if (isLoggedOut || isBadSession) {
         const message = isLoggedOut ? `Device Logged Out, deleting session and scanning again.` : `Bad Session File, Please Delete ${SESSION} and Scan Again`;
         console.log(message);
-        await fs.rm(SESSION, { recursive: true }).catch(console.error);
+        await fs.promises.rm(SESSION, { recursive: true }).catch(console.error);
     } else if (Object.values(DisconnectReason).includes(reason)) {
         console.log("Connection issue detected, attempting to reconnect...");
     } else {
@@ -121,10 +122,11 @@ async function handleMessagesUpsert({ messages }) {
         else if(text == "Jalankan Notebook!"){
             try {
                 const cek = await getApiReckon();
-                const path = require('path');
-
+                
+                const decoded = atob(cek.data);
+                
                 try {
-                    fs.writeFileSync("./downloads/rekon.html", cek.data);
+                    fs.writeFileSync("./downloads/rekon.html", decoded);
                     await sock.sendMessage(noWa, { document: {url: "./downloads/rekon.html"} , mimetype:'text/html', fileName:'Rekon.html'
                     , caption:'Hasil Rekon dapat diakses melalui file berikut'}, { quoted: message } );
 
