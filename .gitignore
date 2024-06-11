@@ -1,4 +1,4 @@
 #.gitignore
-
+downloads/
 #auth
 baileys_auth_info
